@@ -26,11 +26,13 @@
 #define SGX_EPC_ADDR_PROP "addr"
 #define SGX_EPC_SIZE_PROP "size"
 #define SGX_EPC_MEMDEV_PROP "memdev"
+#define SGX_EPC_NUMA_NODE_PROP "node"
 
 /**
  * SGXEPCDevice:
  * @addr: starting guest physical address, where @SGXEPCDevice is mapped.
  *         Default value: 0, means that address is auto-allocated.
+ * @node: numa node to which @PCDIMMDevice is attached.
  * @hostmem: host memory backend providing memory for @SGXEPCDevice
  */
 typedef struct SGXEPCDevice {
@@ -39,6 +41,7 @@ typedef struct SGXEPCDevice {
 
     /* public */
     uint64_t addr;
+    uint32_t node;
     HostMemoryBackend *hostmem;
 } SGXEPCDevice;
 
@@ -59,6 +62,8 @@ typedef struct SGXEPCState {
 extern int sgx_epc_enabled;
 
 int sgx_epc_get_section(int section_nr, uint64_t *addr, uint64_t *size);
+
+void sgx_epc_build_srat(GArray *table_data);
 
 static inline uint64_t sgx_epc_above_4g_end(SGXEPCState *sgx_epc)
 {

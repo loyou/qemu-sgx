@@ -25,6 +25,8 @@
 #include "exec/address-spaces.h"
 #include "sysemu/reset.h"
 #include "sysemu/hw_accel.h"
+#include "hw/acpi/acpi-defs.h"
+#include "hw/acpi/aml-build.h"
 
 uint32_t epc_num;
 
@@ -38,6 +40,7 @@ uint32_t epc_num;
 
 static Property sgx_epc_properties[] = {
     DEFINE_PROP_UINT64(SGX_EPC_ADDR_PROP, SGXEPCDevice, addr, 0),
+    DEFINE_PROP_UINT32(SGX_EPC_NUMA_NODE_PROP, SGXEPCDevice, node, 0),
     DEFINE_PROP_LINK(SGX_EPC_MEMDEV_PROP, SGXEPCDevice, hostmem,
                      TYPE_MEMORY_BACKEND, HostMemoryBackend *),
     DEFINE_PROP_END_OF_LIST(),
@@ -237,6 +240,8 @@ static void sgx_epc_md_fill_device_info(const MemoryDeviceState *md,
 
     se->memaddr = epc->addr;
     se->size = object_property_get_uint(OBJECT(epc), SGX_EPC_SIZE_PROP,
+                                        NULL);
+    se->node = object_property_get_uint(OBJECT(epc), SGX_EPC_NUMA_NODE_PROP,
                                         NULL);
     se->memdev = object_get_canonical_path(OBJECT(epc->hostmem));
 
@@ -443,6 +448,47 @@ SGXInfo *sgx_get_capabilities(Error **errp)
     return info;
 }
 
+static int sgx_epc_device_list(Object *obj, void *opaque)
+{
+    GSList **list = opaque;
+
+    if (object_dynamic_cast(obj, TYPE_SGX_EPC)) {
+        *list = g_slist_append(*list, DEVICE(obj));
+    }
+
+    object_child_foreach(obj, sgx_epc_device_list, opaque);
+    return 0;
+}
+
+static GSList *sgx_epc_get_device_list(void)
+{
+    GSList *list = NULL;
+
+    object_child_foreach(qdev_get_machine(), sgx_epc_device_list, &list);
+    return list;
+}
+
+void sgx_epc_build_srat(GArray *table_data)
+{
+    GSList *device_list = sgx_epc_get_device_list();
+
+    for (; device_list; device_list = device_list->next) {
+        AcpiSratMemoryAffinity *numamem = NULL;
+        DeviceState *dev = device_list->data;
+        Object *obj = OBJECT(dev);
+        uint64_t addr, size;
+        int node;
+
+        node = object_property_get_int(obj, SGX_EPC_NUMA_NODE_PROP, &error_abort);
+        addr = object_property_get_uint(obj, SGX_EPC_ADDR_PROP, &error_abort);
+        size = object_property_get_uint(obj, SGX_EPC_SIZE_PROP, &error_abort);
+
+        numamem = acpi_data_push(table_data, sizeof *numamem);
+        build_srat_memory(numamem, addr, size, node, MEM_AFFINITY_ENABLED);
+    }
+    g_slist_free(device_list);
+}
+
 static QemuOptsList sgx_epc_opts = {
     .name = "sgx-epc",
     .implied_opt_name = "id",
@@ -456,6 +502,10 @@ static QemuOptsList sgx_epc_opts = {
             .name = "memdev",
             .type = QEMU_OPT_STRING,
             .help = "memory object backend",
+        },{
+            .name = "node",
+            .type = QEMU_OPT_NUMBER,
+            .help = "numa node id",
         },
         { /* end of list */ }
     },

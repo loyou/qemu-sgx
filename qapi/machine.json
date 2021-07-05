@@ -1203,6 +1203,7 @@
   'data': { '*id': 'str',
             'memaddr': 'size',
             'size': 'size',
+            'node': 'int',
             'memdev': 'str'
           }
 }
