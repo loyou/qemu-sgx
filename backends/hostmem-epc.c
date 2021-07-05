@@ -18,6 +18,10 @@
 #include "sysemu/hostmem.h"
 #include "hw/i386/pc.h"
 
+#ifdef CONFIG_NUMA
+#include <numaif.h>
+#endif
+
 #define TYPE_MEMORY_BACKEND_EPC "memory-backend-epc"
 
 #define MEMORY_BACKEND_EPC(obj)                                        \
@@ -74,6 +78,22 @@ void sgx_memory_backend_reset(HostMemoryBackend *backend, int fd,
 
     ptr = memory_region_get_ram_ptr(&backend->mr);
     sz = memory_region_size(&backend->mr);
+
+#ifdef CONFIG_NUMA
+    unsigned long lastbit = find_last_bit(backend->host_nodes, MAX_NODES);
+    unsigned long maxnode = (lastbit + 1) % (MAX_NODES + 1);
+    unsigned flags = MPOL_MF_STRICT | MPOL_MF_MOVE;
+
+    if (maxnode &&
+        mbind(ptr, sz, backend->policy, backend->host_nodes, maxnode + 1,
+              flags)) {
+        if (backend->policy != MPOL_DEFAULT || errno != ENOSYS) {
+            error_setg_errno(errp, errno,
+                            "cannot bind memory to host NUMA nodes");
+            return;
+        }
+    }
+#endif
 
     if (backend->prealloc) {
         os_mem_prealloc(memory_region_get_fd(&backend->mr), ptr, sz,
