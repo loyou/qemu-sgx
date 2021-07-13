@@ -368,28 +368,6 @@ void pc_machine_init_sgx_epc(PCMachineState *pcms)
     memory_region_set_size(&sgx_epc->mr, sgx_epc->size);
 }
 
-SGXInfo *sgx_get_info(void)
-{
-    SGXInfo *info;
-
-    info = g_new0(SGXInfo, 1);
-    if (sgx_epc_enabled) {
-        PCMachineState *pcms = PC_MACHINE(qdev_get_machine());
-        SGXEPCState *sgx_epc = pcms->sgx_epc;
-
-        info->sgx = true;
-        info->sgx1 = true;
-        info->sgx2 = true;
-        info->flc = true;
-
-        if (sgx_epc) {
-            info->section_size = sgx_epc->size;
-        }
-    }
-
-    return info;
-}
-
 static uint64_t sgx_calc_section_metric(uint64_t low, uint64_t high)
 {
     return (low & GENMASK_ULL(31, 12)) +
@@ -487,6 +465,42 @@ void sgx_epc_build_srat(GArray *table_data)
         build_srat_memory(numamem, addr, size, node, MEM_AFFINITY_ENABLED);
     }
     g_slist_free(device_list);
+}
+
+static SGXEPCSectionList *get_epc_sections(void)
+{
+    GSList *device_list = sgx_epc_get_device_list();
+    SGXEPCSectionList *head = NULL, **tail = &head;
+    SGXEPCSection *section;
+    uint64_t i=0;
+
+    for (; device_list; device_list = device_list->next) {
+        DeviceState *dev = device_list->data;
+        Object *obj = OBJECT(dev);
+
+        section = g_new0(SGXEPCSection, 1);
+        section->index = i++;
+        section->size= object_property_get_uint(obj, SGX_EPC_SIZE_PROP, &error_abort);
+        QAPI_LIST_APPEND(tail, section);
+    }
+    g_slist_free(device_list);
+
+    return head;
+}
+
+SGXInfo *sgx_get_info(void)
+{
+    SGXInfo *info;
+
+    info = g_new0(SGXInfo, 1);
+    if (sgx_epc_enabled) {
+        info->sgx = true;
+        info->sgx1 = true;
+        info->sgx2 = true;
+        info->flc = true;
+        info->sections = get_epc_sections();
+    }
+    return info;
 }
 
 static QemuOptsList sgx_epc_opts = {

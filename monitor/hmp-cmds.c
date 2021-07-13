@@ -2241,6 +2241,7 @@ void hmp_info_memory_size_summary(Monitor *mon, const QDict *qdict)
 void hmp_info_sgx(Monitor *mon, const QDict *qdict)
 {
     SGXInfo *info = qmp_query_sgx(NULL);
+    SGXEPCSectionList *section_list, *section;
 
     if (info && info->sgx) {
         monitor_printf(mon, "SGX support: %s\n",
@@ -2251,8 +2252,14 @@ void hmp_info_sgx(Monitor *mon, const QDict *qdict)
                        info->sgx2 ? "enabled" : "disabled");
         monitor_printf(mon, "FLC support: %s\n",
                        info->flc ? "enabled" : "disabled");
-        monitor_printf(mon, "size: %" PRIu64 "\n",
-                       info->section_size);
+
+        section_list = info->sections;
+        for (section = section_list; section; section = section->next) {
+            monitor_printf(mon, "SECTION #%" PRId64 ": ",
+                           section->value->index);
+            monitor_printf(mon, "size=%" PRIu64 "\n",
+                           section->value->size);
+        }
     } else {
         monitor_printf(mon, "SGX is not enabled\n");
     }
